@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>CSCB63 Design and Analysis of Data Structures</title>
+<link href="../static/style.css" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+</head>
+
+<body>
+  <!-- code for top menu which will stick at the top of the page when scolling-->
+  <!-- inspired by https://codepen.io/andornagy/pen/RNeydj-->
+  <nav> 
+    <!--menu title, change position and font size when it becomes a dropdown menu-->
+    <div id="menu-title">Welcome, <strong>Instructor</strong> {{ user['name']['first_name'] }}</div>
+    <!-- dropdown menu for mobile devices-->
+    <label for="drop" class="button">≡</label>
+    <input type="checkbox" id="drop"/>
+    <ul class="menu">
+      <li><a href="{{ url_for('home') }}">Home</a></li>
+      <li><a href="http://piazza.com/utoronto.ca/winter2021/cscb63h3slec01/home">Piazza</a></li>
+      <li>
+        <label for="drop-1" class="button">Course Materials</label>
+        <a>Course Materials</a>
+        <!-- dropdown items for "Course Materials"-->
+        <input type="checkbox" id="drop-1"/>
+        <ul>
+          <li><a href="{{ url_for('lectures') }}">Lectures</a></li>
+          <li><a href="{{ url_for('home', _anchor='assignments') }}">Assignments</a></li>
+          <li><a href="{{ url_for('home', _anchor='tests') }}">Tests</a></li>
+          <li><a href="../static/Sample.pdf">Syllabus</a></li>
+        </ul> 
+      </li>
+      <li><a href="{{ url_for('labs') }}">Labs</a></li>
+      <li><a href="http://markus.utsc.utoronto.ca/cscb63w21">Markus</a></li>
+      <li><a href="{{ url_for('home', _anchor='course-team') }}">Course Team</a></li>
+      <li><label for="drop-2" class="button">Account</label>
+        <a>Account</a>
+        <!-- dropdown items for "Course Materials"-->
+        <input type="checkbox" id="drop-2"/>
+        <ul>
+          <li><a href="{{ url_for('grade') }}">Grade</a></li>
+          <li><a href="{{ url_for('feedback') }}">Feedback</a></li>
+          <li><a href="{{ url_for('setting') }}">Setting</a></li>
+          <li><a href="/logout">Log out</a></li>
+        </ul> 
+      </li>
+    </ul>
+  </nav>
+  <!--the content div controls the max and min width for all the section contents on the body of the page-->
+  <div class="content">
+    <!-- content for the title, center at the begining of the page but won't stick at the top when scrolling as the header-->
+    <div class="title">
+      <h1>CSCB63</h1>
+      <p>Design and Analysis of Data Structures</p>
+    </div>
+    <section>
+      <h2>Student Grades</h2><hr>
+      <!--this will call flask func retruning data with filters-->
+      <form action="/search-grade" method='GET'>
+        <!--Instructor can only search for student with exact username-->
+        <!--Ye, I know it is not easy for searching but I don't know if there are some funcs like 'substring' in sqlite3-->
+        <!--Can be improved later with java-->
+        <input type="text" maxlength="20" name="search-student" value="" placeholder="username">
+        <!--Intsrtuctor can only search for existing event-->
+        <select id="search-event" name="search-event">
+        </select>
+        <input type="number" name="search-grade" value="" min="0" max="100" placeholder="grade">
+        <input type="submit" value="search">
+        <input type="submit" name="refresh" value="refresh">
+      </form>
+      <div class="table" id="grade-table">
+      </div>
+    </section>
+    <section>
+      <!--only instructors can enter grades of students-->
+      <!-- --------------------------------------------------------------------------// -->
+      <h2>Template Changes</h2><hr>
+      <label>Enter a grade of your student:</label>
+      <input list="students" maxlength="20" required name="student" placeholder="username" id="student">
+      <datalist id="students">
+      </datalist>
+      <!--input and datalist options enables instructor to enter a new event not in current table but will be inserted by flask-->
+      <input list="events" name="event" maxlength="20" required placeholder="type" id="event">
+      <datalist id="events">                  
+      </datalist>
+      <input type="number" name="grade" placeholder="grade" min="0" required max="100" id="grade">
+      <!--java function to create new temp table row with inputs and render the temptable-->
+      <button onclick="appendTemp()">add to Temp</button>
+      <button onclick="archiveTemp()">submit changes</button>
+      <div class="table" id="temp-table">
+      </div>
+      <!-- --------------------------------------------------------------------------// -->
+    </section>
+  </div>
+  <!--content end-->
+  <!--a footer with designers' name and link to Faculty CS UofT-->
+  <div id="footer">
+    <p><a href="http://web.cs.toronto.edu">Faculty of Computer Science at UofT</a></p>
+    <p>Site designed by <strong>Jiale Shang</strong> & <strong>Zechen Lai</strong> & <strong>Feilong Qiu</strong></p>
+  </div>
+  <script>
+    let grades = JSON.parse('{{ grade | tojson | safe}}');
+    let students = JSON.parse('{{ student | tojson | safe}}');
+    let events = JSON.parse('{{ event | tojson | safe}}');
+    //-------------------------------------------------
+    let newGrade = [] // grades stored for Temp changes table
+    const tempTable = document.getElementById("temp-table");
+    const gradeTable = document.getElementById("grade-table");
+    //let newRemark = []
+    function renderTemp(){
+      // print heading of Temptable
+      tempTable.innerHTML=
+        `<div class="row">
+          <div class="cell">Student</div>
+          <div class="cell">Type</div>
+          <div class="cell">Grade</div>
+          <div class="cell"></div>
+        </div>`;
+      // print all grades in newGrade list as rows of Temptable
+      for (i=0;i<newGrade.length;i++){
+        addTemprow(newGrade[i].username,newGrade[i].ename,newGrade[i].grade);
+      };
+    };
+    function renderTable(){
+      // print heading of Gradetable
+      gradeTable.innerHTML=
+       `<div class="row">
+          <div class="cell">Student</div>
+          <div class="cell">Type</div>
+          <div class="cell">Grade</div>
+          <div class="cell" id="remark-sort" ><a href="/remark-sort">Remark</a></div>
+          <div class="cell"></div>
+        </div>`;
+      // change "remark" button between all grades and remarking grades
+      let x=document.getElementById('remark-sort');
+      if (remark_sorted()){
+          x.innerHTML="<a href='{{ url_for('grade') }}'>Remark</a>"
+      }else{
+          x.innerHTML="<a href='/remark-sort'>Remark</a>"
+      };
+      // print all grades in grades list as rows of Gradetable
+      for (i=0;i<grades.length;i++){
+        addGraderow(grades[i].username,grades[i].ename,grades[i].grade,grades[i].remark,grades[i].request,i);
+      }
+    };
+    function addGraderow(name,type,grade,remark,request,i){
+      let buff="";
+      // setting remark cell according to remark status
+      if (remark == 1){
+        buff=
+         `<div class="dropdown">
+            <span>Remarking</span>
+            <div class="dropdown-content">`+request+`</div>  
+          </div>`;
+      }else if (remark == -1){
+        buff=`Remarked`
+      };
+      // pirnt a row of Gradetable
+      gradeTable.innerHTML+=
+          `<div class="row">
+            <div class="cell">`+name+`</div>
+            <div class="cell">`+type+`</div>
+            <div class="cell" id="grade-cell-`+i+`">
+              <div class="grade-change-box">
+                <span id="span-`+i+`" onkeypress = "return testChar(event,'`+i+`');" contenteditable="true">`+grade+`</span>
+                <button id="ch-`+i+`" hidden class="gd-ch-btn" onclick="change_grade('`+name+`','`+type+`','`+i+`')">change</button>  
+              </div>
+            </div>
+            <div class="cell">
+              `+buff+`
+            </div>
+            <div class="cell"><button class="remove-grade" onclick="remove_grade('`+name+`','`+type+`')">remove</button></div>
+          </div>`;
+    };
+    function addTemprow(stdName,assType,assGrad){
+      // print a row of Temptable
+      tempTable.innerHTML+=
+              `<div class="row">
+                <div class="cell">`+stdName+`</div>
+                <div class="cell">`+assType+`</div>
+                <div class="cell">`+assGrad+`</div>
+                <div class="cell"><button class="remove-temp" onclick="remove_row('`+stdName+`','`+assType+`')">remove</button></div>
+              </div>`
+    };
+    function appendTemp() {
+      // "add to temp" clicked, receive values from input boxes.
+      let stdName = document.getElementById("student").value;
+      let assType = document.getElementById("event").value;
+      let assGrad = document.getElementById("grade").value;
+      // if input data not valid(something empty,grade not int, grade not inrange,student not in the class,...), return
+      if (!isDataValid(stdName, assType, assGrad)){
+        return
+      }
+      assGrad = parseInt(assGrad);
+      // if data is in grades list, change grade value of that item;
+      // if not, push data to grades list. 
+      if (!isDataExists(stdName, assType, newGrade,assGrad)){
+        let data = {
+        username: stdName,
+        ename: assType,
+        grade: assGrad
+        };
+        newGrade.push(data);
+      };
+      renderTemp();
+    };
+    // java post json to flask -- ajax without jquery
+    function getXmlDoc(){
+      var xmlDoc;
+      if(window.XMLHttpRequest){
+        xmlDoc = new XMLHttpRequest();
+      }else{
+        xmlDoc = new ActiveXObject("Microsoft.XMLHTTP");
+      }
+      return xmlDoc;
+    }
+    function remove_grade(name,type){
+      // post grade that instructor want to delete to flask
+      var xmlDoc = getXmlDoc();
+      xmlDoc.open('POST','/deleting',true);
+      xmlDoc.setRequestHeader("Content-type","application/json");
+      xmlDoc.send(JSON.stringify({username: name,ename:type}));
+      //since the page won't rerender, append change to current grades list and render Grade Table
+      let buff=[]
+      for(i=0;i<grades.length;i++){
+        if (grades[i].username != name || grades[i].ename != type){
+          buff.push(grades[i]);
+        };
+      };
+      grades=buff;
+      renderTable();
+    };
+
+    function archiveTemp() { // or submit Temp
+      // append newGrade to db if any temp changes submit
+      if (newGrade.length == 0){
+        // return if temp table empty
+        alert('You must enter as least one grade!');
+      }else{
+        // apply newGrade to grades list
+        // if a newGrade item exists in grades, only change the grade value; if not, push the newGrade item into grades list
+        for(i=0;i<newGrade.length;i++){
+          let type=newGrade[i].ename;
+          let grad=newGrade[i].grade;
+          let name=newGrade[i].username;
+          if(! isDataExists(name,type,grades,grad)){
+            let data={
+              ename: type,
+              grade: grad,
+              remark: 0,
+              request: "",
+              username: name
+            };
+            grades.push(data);
+          };
+          if(! isDataEvent(type)){
+            let data={
+              ename:type
+            };
+            events.push(data);
+          };
+        };
+        // post json list to flask.
+        var xmlDoc = getXmlDoc();
+        xmlDoc.open('POST','/grading',true);
+        xmlDoc.setRequestHeader("Content-type","application/json");
+        xmlDoc.send(JSON.stringify({changes: newGrade}));
+        // clear newGrade and render all tables
+        alert(`${newGrade.length} grades changed successfully!`);
+        newGrade=[];
+        option_list();
+        renderTemp();
+        renderTable();
+      };
+    };
+    function isDataValid(name, type, grad) {
+      if(name == "" || type == "" || grad == ""){
+        // if any of name,type,grad is none,return with error mess
+        alert('None of the template grade inputs can be empty!');
+        return false
+      }else if (isNaN(grad) || 100 < grad || grad < 0){
+        // if grad no in range or isNaN,return false and error
+        alert('Grade not in range 0~100!');
+        return false
+      };
+      //if  name in students.username, return true
+      //else return false and error 
+      for (i=0;i<students.length;i++){
+        if(students[i].username == name){
+          return true
+        }
+      };
+      alert('The student is not in your class!');
+      return false
+    }
+    function isDataExists(name, type ,list,grad){
+      // if grade exist in list, return true, else return false
+      for (i = 0; i < list.length; i++) {
+        if (list[i]['username'] == name && list[i]['ename'] == type) {
+          if (grad!=-1){
+            // find the grade in list, change list[i].grade
+            list[i]['grade'] =  grad
+            if(list==grades){
+              if(grades[i].remark==1){
+                // if list is grades list and grades[i] remark status 1, set grades[i] remarked
+                grades[i].remark=-1
+              }
+            }
+          }
+          return true
+        }
+      }
+      return false
+    };
+    function isDataEvent(type){
+      for(i=0;i<events.length;i++){
+        if(events[i]['ename']==type){
+          return true
+        };
+      };
+      return false
+    };
+    function remove_row(name,type){
+      //remove grade with name,type from newGrade
+      let buff=[];
+      for (i=0;i<newGrade.length;i++){
+        if(newGrade[i].ename != type || newGrade[i].username !=name){
+          buff.push(newGrade[i]);
+        };
+      };
+      newGrade=buff;
+      renderTemp();
+    }
+    function change_grade(name,type,i){
+      // receive changed value from grade cell
+      // find the "span-i" cell
+      let changeGrade=[];
+      let ch = document.getElementById(`span-${i}`);
+      let ch_btn = document.getElementById(`ch-${i}`);
+      let grad = parseInt(ch.innerHTML);
+      // if changed value empty or not in range, not change and alert errors 
+      if(!grad){
+        alert('Grades must not be empty');
+        ch.innerHTML=grades[i]['grade'];
+      }else if(grad>100 || grad<0){
+        alert('The grade you enter is not in range 0~100.');
+        ch.innerHTML=grades[i]['grade'];
+      }else{
+        // if changed value valid, post changed grade to flask
+        isDataExists(name,type,grades,grad);
+        let data={
+          username:name,
+          ename:type,
+          grade:grad,
+        };
+        changeGrade.push(data);
+        var xmlDoc = getXmlDoc();
+        xmlDoc.open('POST','/grading',true);
+        xmlDoc.setRequestHeader("Content-type","application/json");
+        xmlDoc.send(JSON.stringify({changes: changeGrade}));
+        //rerender tables
+        ch_btn.setAttribute('hidden','');
+        renderTemp();
+        renderTable();
+      };
+    };
+    function testChar(event,i){
+      //grade cell 
+      //if keyboard enter not numbers, return false(value not change)
+      let ch = document.getElementById(`span-${i}`);
+      let grad = ch.innerHTML; 
+      if ((event.keyCode >= 48 && event.keyCode <= 57)) {
+        return true;
+      }else {
+        return false;
+      }
+    };
+    //------------------------------------------------
+    function option_list(){
+        // print option list for datalist students,events and select search-event
+        let l1= document.getElementById('students');
+        let l2 = document.getElementById('events');
+        let l3 = document.getElementById('search-event');
+        l3.innerHTML= `<option value="">--</option>`;
+        l2.innerHTML=``;
+        let buff1=[];
+        let buff2=[];
+        for (i=0; i< events.length; i++) { 
+          //for every item in events list, add to datalist events and select search-event  
+            b = events[i]['ename'];
+            if ( ! buff2.includes(b)) {
+                buff2.push(b);
+                let op = document.createElement('option');
+                op.setAttribute('value',b);
+                l2.appendChild(op);
+                l3.innerHTML+=
+                `<option value="`+b+`">`+b+`</option>`
+            };
+        };
+        for (i=0;i<students.length;i++){
+          // for every item in students list, add to datalist students
+            a = students[i]['username'];
+            if ( ! buff1.includes(a)) {
+                buff1.push(a);
+                let op = document.createElement('option');
+                op.setAttribute('value',a);
+                l1.appendChild(op);
+            };
+        };
+    };
+    function remark_sorted(){
+      //check if all grades in grades list are all remarking
+        for (i=0;i<grades.length;i++){
+            if(grades[i].remark != 1){
+                return false;
+            };
+        };
+        return true;
+    };
+    // preparing optionlist, render tables
+    option_list();
+    renderTemp();
+    renderTable();
+    document.addEventListener("click",function(event){
+      //if grade cell not clicked, hid change and restore value
+      // vice versa
+      for(i=0;i<grades.length;i++){
+        let gd = document.getElementById(`grade-cell-${i}`);
+        let ch_btn = document.getElementById(`ch-${i}`);
+        let ch = document.getElementById(`span-${i}`);
+        if( gd.contains(event.target)){
+          if(ch_btn.hasAttribute('hidden')){
+            ch_btn.removeAttribute('hidden');
+          }
+        }else{
+          ch_btn.setAttribute('hidden','');
+          ch.innerHTML=grades[i]['grade'];
+        };
+      };
+    });
+  </script>
+</body>
+</html>
